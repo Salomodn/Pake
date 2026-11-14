@@ -1,3 +1,4 @@
+```yaml
 name: Build App With Pake CLI
 
 env:
@@ -17,7 +18,7 @@ on:
           - "macos-latest"
           - "ubuntu-24.04"
       url:
-        description: "Website URL"
+        description: "Website URL (add ?multi-instance=true to enable multiple instances)"
         required: true
       name:
         description: "App name (lowercase for Linux)"
@@ -68,7 +69,6 @@ on:
         required: false
         default: "deb"
 
-# Builds an app on demand for anyone who runs it; it writes nothing.
 permissions:
   contents: read
 
@@ -97,12 +97,40 @@ jobs:
         if: runner.os == 'Linux'
         uses: rui314/setup-mold@339e96b4ff1f3bd865856ba4cbbe8818a7acb038 # v1
 
+      # Parse URL and determine optional CLI flags.
+      - name: Parse Website URL
+        shell: bash
+        env:
+          INPUT_URL: ${{ inputs.url }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const url = new URL(process.env.INPUT_URL);
+
+          const multiInstance =
+            url.searchParams.get('multi-instance') === 'true';
+
+          url.searchParams.delete('multi-instance');
+
+          const websiteUrl = url.toString();
+
+          const output = [
+            `WEBSITE_URL=${websiteUrl}`,
+            `MULTI_INSTANCE=${multiInstance}`
+          ].join('\n') + '\n';
+
+          fs.appendFileSync(process.env.GITHUB_ENV, output);
+
+          console.log(`Website URL: ${websiteUrl}`);
+          console.log(`Multiple instances: ${multiInstance}`);
+          NODE
+
       - name: Build App (Linux/macOS)
         if: runner.os != 'Windows'
         timeout-minutes: 25
         shell: bash
         env:
-          INPUT_URL: ${{ inputs.url }}
           INPUT_NAME: ${{ inputs.name }}
           INPUT_ICON: ${{ inputs.icon }}
           INPUT_WIDTH: ${{ inputs.width }}
@@ -116,7 +144,7 @@ jobs:
           INPUT_MULTI_ARCH: ${{ inputs.multi_arch }}
           INPUT_TARGETS: ${{ inputs.targets }}
         run: |
-          ARGS=("$INPUT_URL" "--name" "$INPUT_NAME")
+          ARGS=("$WEBSITE_URL" "--name" "$INPUT_NAME")
 
           if [ -n "$INPUT_ICON" ]; then
             ARGS+=("--icon" "$INPUT_ICON")
@@ -158,6 +186,10 @@ jobs:
             ARGS+=("--multi-arch")
           fi
 
+          if [ "$MULTI_INSTANCE" == "true" ]; then
+            ARGS+=("--multi-instance")
+          fi
+
           if [ -n "$INPUT_TARGETS" ] && [ "$RUNNER_OS" == "Linux" ]; then
             ARGS+=("--targets" "$INPUT_TARGETS")
           fi
@@ -165,6 +197,7 @@ jobs:
           printf 'Running: node dist/cli.js'
           printf ' %q' "${ARGS[@]}"
           printf '\n'
+
           node dist/cli.js "${ARGS[@]}"
 
       - name: Build App (Windows)
@@ -172,7 +205,6 @@ jobs:
         timeout-minutes: 25
         shell: pwsh
         env:
-          INPUT_URL: ${{ inputs.url }}
           INPUT_NAME: ${{ inputs.name }}
           INPUT_ICON: ${{ inputs.icon }}
           INPUT_WIDTH: ${{ inputs.width }}
@@ -186,9 +218,8 @@ jobs:
           INPUT_MULTI_ARCH: ${{ inputs.multi_arch }}
           INPUT_TARGETS: ${{ inputs.targets }}
         run: |
-          $args = $env:INPUT_URL, "--name", $env:INPUT_NAME
+          $args = @($env:WEBSITE_URL, "--name", $env:INPUT_NAME)
 
-          # Empty environment variables are unset on Windows, so test for null too.
           if (-not [string]::IsNullOrEmpty($env:INPUT_ICON)) {
             $args += "--icon", $env:INPUT_ICON
           }
@@ -225,7 +256,12 @@ jobs:
             $args += "--new-window"
           }
 
+          if ($env:MULTI_INSTANCE -eq "true") {
+            $args += "--multi-instance"
+          }
+
           Write-Host "Running: node dist/cli.js $($args -join ' ')"
+
           node dist/cli.js $args
 
           git checkout -- src-tauri/Cargo.lock
@@ -238,7 +274,6 @@ jobs:
           path: ${{ inputs.name }}.dmg
           retention-days: 3
 
-      # The CLI lowercases and hyphenates Linux names, so match packages by extension.
       - name: Upload DEB (Linux)
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v6
@@ -282,3 +317,4 @@ jobs:
           name: ${{ inputs.name }}-Windows
           path: ${{ inputs.name }}.msi
           retention-days: 3
+```

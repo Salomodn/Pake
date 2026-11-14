@@ -1,4 +1,3 @@
-```yaml
 name: Build App With Pake CLI
 
 env:
@@ -317,4 +316,4 @@ jobs:
           name: ${{ inputs.name }}-Windows
           path: ${{ inputs.name }}.msi
           retention-days: 3
-```
+
